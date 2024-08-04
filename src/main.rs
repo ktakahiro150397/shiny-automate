@@ -1,7 +1,9 @@
 use std::{env, thread, time::Duration};
 
+use chrono::Local;
 use std::mem;
-use winapi::um::winuser::{INPUT, INPUT_KEYBOARD, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP};
+use win_ocr;
+use winapi::um::winuser::{INPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP};
 
 fn main() {
     // コマンドライン引数を取得
@@ -9,7 +11,7 @@ fn main() {
 
     // 引数が2つない場合はエラーを表示
     if args.len() < 3 {
-        eprintln!("Usage: shiny_mas <width px> <height px> [scale]");
+        eprintln!("Usage: shiny_mas <width px> <height px> <scale> <index>");
         return;
     }
     let raw_width_px: i32 = match args[1].parse() {
@@ -27,7 +29,7 @@ fn main() {
         }
     };
 
-    let mut scale: f32 = match args[3].parse() {
+    let scale: f32 = match args[3].parse() {
         Ok(n) => n,
         Err(_) => {
             eprintln!("Scale is not a float.Fall back to 1.0");
@@ -35,9 +37,17 @@ fn main() {
         }
     };
 
+    let monitor_index: usize = match args[4].parse() {
+        Ok(n) => n,
+        Err(_) => {
+            eprintln!("Monitor index is not a number.");
+            0
+        }
+    };
+
     println!(
-        "Width: {}, Height: {}, Scale: {}",
-        raw_width_px, raw_height_px, scale
+        "Width: {}, Height: {}, Scale: {}, Monitor Index: {}",
+        raw_width_px, raw_height_px, scale, monitor_index
     );
 
     let resolution_width_px: i32 = ((raw_width_px as f32) / scale) as i32;
@@ -47,9 +57,9 @@ fn main() {
         "Resolution: {}x{}",
         resolution_width_px, resolution_height_px
     );
-    let screen = Screen::new(resolution_width_px, resolution_height_px);
+    let screen = ScreenInfo::new(resolution_width_px, resolution_height_px);
 
-    let wait_duration = Duration::new(150, 0);
+    let wait_duration = Duration::new(5, 0);
 
     // 待機
     println!("Waiting for 5 seconds...");
@@ -61,26 +71,68 @@ fn main() {
     println!("Start!");
 
     loop {
-        println!("start_mv!");
-        start_mv(&screen);
+        if is_playing(monitor_index) {
+            // 再生中の場合、待機する
+            println!("再生中のため、{}秒待機", wait_duration.as_secs());
+        } else {
+            // 再生中でない場合、ランダム再生する
+            println!("楽曲選択画面にいるため、ランダム再生");
+            start_mv(&screen);
 
-        // 右下に移動してカーソルを隠す
-        set_pos_win32(resolution_width_px, resolution_height_px);
+            // 右下に移動してカーソルを隠す
+            set_pos_win32(resolution_width_px, resolution_height_px);
+        }
 
-        // 再生中待機
-        println!("Waiting for {} seconds...", wait_duration.as_secs());
         thread::sleep(wait_duration);
     }
 }
 
-struct Screen {
+fn is_playing(monitor_index: usize) -> bool {
+    // 画面のショットを取得
+    let screens = screenshots::Screen::all().expect("Failed to get screens");
+
+    println!("Screen count: {}", screens.len());
+    let primary_screen = screens[monitor_index];
+    let capture_all = primary_screen.capture().unwrap();
+
+    // 画像をyyyyMMddHHmmssfffを付与して保存
+    let path = format!("./capture_{}.png", Local::now().format("%Y%m%d%H%M%S%f"));
+
+    capture_all
+        .save(&path)
+        .expect("Failed to save capture image.");
+
+    // ショットをOCRにかける
+    let ocr_result = win_ocr::ocr_with_lang(&path, "ja").expect("Failed to OCR");
+
+    // 画像を削除
+    std::fs::remove_file(path).expect("Failed to remove capture image.");
+
+    // 結果を判定
+    let trimmed_result = ocr_result.replace(char::is_whitespace, "");
+    println!("OCR Result: {}", trimmed_result);
+
+    let is_waiting_in_song_list = (trimmed_result.contains("MV")
+        && trimmed_result.contains("視聴"))
+        || trimmed_result.contains("楽曲選択");
+
+    if is_waiting_in_song_list {
+        println!("曲選択画面にいる");
+        return false;
+    } else {
+        println!("曲選択画面にいない");
+        return true;
+    }
+}
+
+struct ScreenInfo {
     width: i32,
     height: i32,
 }
 
-impl Screen {
-    pub fn new(width: i32, height: i32) -> Screen {
-        Screen { width, height }
+impl ScreenInfo {
+    pub fn new(width: i32, height: i32) -> ScreenInfo {
+        ScreenInfo { width, height }
     }
 }
 
@@ -103,7 +155,7 @@ fn click_pos_win32(x: i32, y: i32) {
         // マウスの左クリック押下
         let mut input = mem::zeroed::<INPUT>();
         input.type_ = winapi::um::winuser::INPUT_MOUSE;
-        let mut mouse = input.u.mi_mut();
+        let mouse = input.u.mi_mut();
         mouse.dwFlags = MOUSEEVENTF_LEFTDOWN;
         // mouse.dx = x;
         // mouse.dy = y;
@@ -115,7 +167,7 @@ fn click_pos_win32(x: i32, y: i32) {
         // マウスの左クリック解放
         let mut input = mem::zeroed::<INPUT>();
         input.type_ = winapi::um::winuser::INPUT_MOUSE;
-        let mut mouse = input.u.mi_mut();
+        let mouse = input.u.mi_mut();
         mouse.dwFlags = MOUSEEVENTF_LEFTUP;
         // mouse.dx = x;
         // mouse.dy = y;
@@ -133,7 +185,7 @@ fn click_position(button_pos: &ButtonPosition) {
     click_pos_win32(button_pos.x_pos, button_pos.y_pos);
 }
 
-fn start_mv(screen: &Screen) {
+fn start_mv(screen: &ScreenInfo) {
     // ランダム→MV再生→スタート→中央クリック を押す一連の動作
     const HEIGHT: f32 = 10.0;
     const WIDTH: f32 = 20.0;
@@ -163,12 +215,6 @@ fn start_mv(screen: &Screen) {
         y_pos: y_pos_val,
     };
 
-    let center_resume_button = ButtonPosition {
-        name: String::from("中央 再生ボタン"),
-        x_pos: ((screen.width as f32) * (10.0 / WIDTH)) as i32,
-        y_pos: y_pos_val,
-    };
-
     // ランダムボタンを押す
     click_position(&random_button);
 
@@ -183,15 +229,4 @@ fn start_mv(screen: &Screen) {
 
     // MV再生ボタンを押す
     click_position(&mv_start_button);
-
-    // 待機
-    thread::sleep(Duration::new(1, 0));
-
-    // 画面中央をクリック
-    click_position(&center_resume_button);
-    thread::sleep(Duration::new(1, 0));
-    click_position(&center_resume_button);
-
-    // 待機
-    thread::sleep(Duration::new(1, 0));
 }
