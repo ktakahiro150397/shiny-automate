@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 mouse-rs = "0.4.2"
+winapi = { version = "0.3", features = ["winuser"] }

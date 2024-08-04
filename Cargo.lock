@@ -259,6 +259,7 @@ name = "shiny-automate"
 version = "0.1.0"
 dependencies = [
  "mouse-rs",
+ "winapi",
 ]
 
 [[package]]

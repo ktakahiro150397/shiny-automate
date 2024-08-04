@@ -1,17 +1,22 @@
-use std::{thread, time::Duration};
+use std::{os::windows, thread, time::Duration};
 
 use mouse_rs::{types::keys::Keys, Mouse};
+
+use std::mem;
+use winapi::{
+    shared::{
+        minwindef::{BOOL, FALSE, LPARAM, TRUE},
+        windef::HWND,
+    },
+    um::winuser::{
+        EnumWindows, GetWindowTextW, SendInput, SetFocus, SetForegroundWindow, INPUT,
+        INPUT_KEYBOARD, KEYEVENTF_KEYUP, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, VK_CONTROL,
+    },
+};
 // mod shiny_mas;
 
 fn main() {
     let mouse = Mouse::new();
-
-    // ALLタブの順序を取得し、それに合わせて自動でマウスを移動させる
-    // TODO :
-
-    // 20x11
-
-    // 3:32
 
     const MONITOR_RESOLUTION_WIDTH_PIXEL: i32 = (3840.0 / 1.25) as i32;
     const MONITOR_RESOLUTION_HEIGHT_PIXEL: i32 = (2560.0 / 1.25) as i32;
@@ -21,7 +26,7 @@ fn main() {
         MONITOR_RESOLUTION_HEIGHT_PIXEL,
     );
 
-    let wait_duration = Duration::new(3, 0);
+    let wait_duration = Duration::new(120, 0);
 
     // 待機
     println!("Waiting for 5 seconds...");
@@ -30,18 +35,16 @@ fn main() {
 
     loop {
         // マウス位置初期化
-        mouse.move_to(0, 0).expect("Mouse move_to failed.");
+        // mouse.move_to(0, 0).expect("Mouse move_to failed.");
 
         println!("start_mv!");
         start_mv(&screen, &mouse);
 
         // 右下に移動してカーソルを隠す
-        // mouse
-        //     .move_to(
-        //         MONITOR_RESOLUTION_WIDTH_PIXEL,
-        //         MONITOR_RESOLUTION_HEIGHT_PIXEL,
-        //     )
-        //     .expect("Mouse move_to failed.");
+        set_pos_win32(
+            MONITOR_RESOLUTION_WIDTH_PIXEL,
+            MONITOR_RESOLUTION_HEIGHT_PIXEL,
+        );
 
         // 再生中待機
         println!("Waiting for {} seconds...", wait_duration.as_secs());
@@ -80,15 +83,63 @@ struct ButtonPosition {
 //     }
 // }
 
+unsafe fn create_input(key_code: u16, flags: u32) -> INPUT {
+    let mut input = mem::zeroed::<INPUT>();
+
+    input.type_ = INPUT_KEYBOARD;
+    let mut ki = input.u.ki_mut();
+    ki.wVk = key_code;
+    ki.dwFlags = flags;
+    input
+}
+
+fn set_pos_win32(x: i32, y: i32) {
+    unsafe {
+        winapi::um::winuser::SetCursorPos(x, y);
+    }
+    println!("SetCursorPos: x: {}, y: {}", x, y);
+}
+
+fn click_pos_win32(x: i32, y: i32) {
+    set_pos_win32(x, y);
+
+    unsafe {
+        // マウスの左クリック押下
+        let mut input = mem::zeroed::<INPUT>();
+        input.type_ = winapi::um::winuser::INPUT_MOUSE;
+        let mut mouse = input.u.mi_mut();
+        mouse.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        mouse.dx = x;
+        mouse.dy = y;
+
+        winapi::um::winuser::SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
+    }
+
+    unsafe {
+        // マウスの左クリック解放
+        let mut input = mem::zeroed::<INPUT>();
+        input.type_ = winapi::um::winuser::INPUT_MOUSE;
+        let mut mouse = input.u.mi_mut();
+        mouse.dwFlags = MOUSEEVENTF_LEFTUP;
+        mouse.dx = x;
+        mouse.dy = y;
+
+        winapi::um::winuser::SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
+    }
+}
+
 fn click_position(mouse: &Mouse, button_pos: &ButtonPosition) {
     println!(
         "click_position [{}] : x: {}, y: {}",
         button_pos.name, button_pos.x_pos, button_pos.y_pos
     );
-    mouse
-        .move_to(button_pos.x_pos, button_pos.y_pos)
-        .expect("Mouse move_to failed.");
-    mouse.click(&Keys::LEFT).expect("LEFT click failed.");
+
+    click_pos_win32(button_pos.x_pos, button_pos.y_pos);
+
+    // mouse
+    //     .move_to(button_pos.x_pos, button_pos.y_pos)
+    //     .expect("Mouse move_to failed.");
+    // mouse.click(&Keys::LEFT).expect("LEFT click failed.");
 }
 
 fn start_mv(screen: &Screen, mouse: &Mouse) {
