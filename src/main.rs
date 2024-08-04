@@ -229,4 +229,7 @@ fn start_mv(screen: &ScreenInfo) {
 
     // MV再生ボタンを押す
     click_position(&mv_start_button);
+
+    // 待機
+    thread::sleep(Duration::new(1, 0));
 }
