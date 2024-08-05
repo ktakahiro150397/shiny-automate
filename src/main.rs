@@ -1,6 +1,7 @@
 use std::{env, thread, time::Duration};
 
 use chrono::Local;
+use rand::Rng as Random;
 use std::mem;
 use win_ocr;
 use winapi::um::winuser::{INPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP};
@@ -59,7 +60,7 @@ fn main() {
     );
     let screen = ScreenInfo::new(resolution_width_px, resolution_height_px);
 
-    let wait_duration = Duration::new(5, 0);
+    let wait_duration = Duration::new(1, 0);
 
     // 待機
     println!("Waiting for 5 seconds...");
@@ -215,8 +216,14 @@ fn start_mv(screen: &ScreenInfo) {
         y_pos: y_pos_val,
     };
 
-    // ランダムボタンを押す
-    click_position(&random_button);
+    // ランダムボタンをランダム回数押す
+    let random_count = rand::thread_rng().gen_range(1..4);
+    println!("Shuffling...");
+    for _ in 0..random_count {
+        click_position(&random_button);
+        thread::sleep(Duration::new(1, 0));
+    }
+    println!("{} time(s)!", random_count);
 
     // 待機
     thread::sleep(Duration::new(3, 0));
