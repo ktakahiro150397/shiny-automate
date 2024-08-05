@@ -58,7 +58,7 @@ fn main() {
         "Resolution: {}x{}",
         resolution_width_px, resolution_height_px
     );
-    let screen = ScreenInfo::new(resolution_width_px, resolution_height_px);
+    let screen_info = ScreenInfo::new(resolution_width_px, resolution_height_px);
 
     let wait_duration = Duration::new(1, 0);
 
@@ -72,13 +72,13 @@ fn main() {
     println!("Start!");
 
     loop {
-        if is_playing(monitor_index) {
+        if is_playing(monitor_index, &screen_info) {
             // 再生中の場合、待機する
             println!("再生中のため、{}秒待機", wait_duration.as_secs());
         } else {
             // 再生中でない場合、ランダム再生する
             println!("楽曲選択画面にいるため、ランダム再生");
-            start_mv(&screen);
+            start_mv(&screen_info);
 
             // 右下に移動してカーソルを隠す
             set_pos_win32(resolution_width_px, resolution_height_px);
@@ -88,20 +88,26 @@ fn main() {
     }
 }
 
-fn is_playing(monitor_index: usize) -> bool {
+fn is_playing(monitor_index: usize, screen_info: &ScreenInfo) -> bool {
     // 画面のショットを取得
     let screens = screenshots::Screen::all().expect("Failed to get screens");
 
     println!("Screen count: {}", screens.len());
     let primary_screen = screens[monitor_index];
-    let capture_all = primary_screen.capture().unwrap();
+
+    let capture = primary_screen
+        .capture_area(
+            0,
+            0,
+            ((screen_info.width as f32) * 0.2) as u32,
+            ((screen_info.height as f32) * 0.2) as u32,
+        )
+        .unwrap();
 
     // 画像をyyyyMMddHHmmssfffを付与して保存
     let path = format!("./capture_{}.png", Local::now().format("%Y%m%d%H%M%S%f"));
 
-    capture_all
-        .save(&path)
-        .expect("Failed to save capture image.");
+    capture.save(&path).expect("Failed to save capture image.");
 
     // ショットをOCRにかける
     let ocr_result = win_ocr::ocr_with_lang(&path, "ja").expect("Failed to OCR");
