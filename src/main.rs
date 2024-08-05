@@ -223,7 +223,7 @@ fn start_mv(screen: &ScreenInfo) {
     };
 
     // ランダムボタンをランダム回数押す
-    let random_count = rand::thread_rng().gen_range(1..4);
+    let random_count = rand::thread_rng().gen_range(1..11);
     println!("Shuffling...");
     for _ in 0..random_count {
         click_position(&random_button);
