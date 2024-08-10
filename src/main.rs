@@ -6,6 +6,8 @@ use std::mem;
 use win_ocr;
 use winapi::um::winuser::{INPUT, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP};
 
+// OCRを行い、シリアル通信でArduinoへ通知する
+
 fn main() {
     // コマンドライン引数を取得
     let args: Vec<String> = env::args().collect();
@@ -46,9 +48,17 @@ fn main() {
         }
     };
 
+    let com_index: i32 = match args[5].parse() {
+        Ok(n) => n,
+        Err(_) => {
+            eprintln!("COM port index is not a number.");
+            0
+        }
+    };
+
     println!(
-        "Width: {}, Height: {}, Scale: {}, Monitor Index: {}",
-        raw_width_px, raw_height_px, scale, monitor_index
+        "Width: {}, Height: {}, Scale: {}, Monitor Index: {} Com Port: {}",
+        raw_width_px, raw_height_px, scale, monitor_index, com_index
     );
 
     let resolution_width_px: i32 = ((raw_width_px as f32) / scale) as i32;
@@ -60,16 +70,9 @@ fn main() {
     );
     let screen_info = ScreenInfo::new(resolution_width_px, resolution_height_px);
 
-    let wait_duration = Duration::new(1, 0);
+    let wait_duration = Duration::new(10, 0);
 
     // 待機
-    println!("Waiting for 5 seconds...");
-    println!("1. シャニソンをウィンドウに戻す");
-    println!("2. デスクトップをクリック");
-    println!("3. シャニソンのタイトルバーをクリック");
-    println!("4. Alt + Enterでフルスクリーンにする");
-    thread::sleep(Duration::new(5, 0));
-    println!("Start!");
 
     loop {
         if is_playing(monitor_index, &screen_info) {
@@ -77,12 +80,20 @@ fn main() {
             println!("再生中のため、{}秒待機", wait_duration.as_secs());
         } else {
             // 再生中でない場合、ランダム再生する
-            println!("楽曲選択画面にいるため、ランダム再生");
-            start_mv(&screen_info);
-
-            // 右下に移動してカーソルを隠す
-            set_pos_win32(resolution_width_px, resolution_height_px);
+            println!("楽曲選択画面にいるため、Arduinoへ通知");
         }
+
+        // COMポートへ通信
+        println!("Send data to COM6");
+        let mut port = serialport::new("COM6", 9600)
+            .open()
+            .expect("failed to create port");
+
+        // データを送信
+        let data_to_send = b"1";
+        port.write_all(data_to_send)
+            .expect("Failed to write data to port");
+        println!("Data sent to port");
 
         thread::sleep(wait_duration);
     }
@@ -141,108 +152,4 @@ impl ScreenInfo {
     pub fn new(width: i32, height: i32) -> ScreenInfo {
         ScreenInfo { width, height }
     }
-}
-
-struct ButtonPosition {
-    name: String,
-    x_pos: i32,
-    y_pos: i32,
-}
-
-fn set_pos_win32(x: i32, y: i32) {
-    unsafe {
-        winapi::um::winuser::SetCursorPos(x, y);
-    }
-}
-
-fn click_pos_win32(x: i32, y: i32) {
-    set_pos_win32(x, y);
-
-    unsafe {
-        // マウスの左クリック押下
-        let mut input = mem::zeroed::<INPUT>();
-        input.type_ = winapi::um::winuser::INPUT_MOUSE;
-        let mouse = input.u.mi_mut();
-        mouse.dwFlags = MOUSEEVENTF_LEFTDOWN;
-        // mouse.dx = x;
-        // mouse.dy = y;
-
-        winapi::um::winuser::SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
-    }
-
-    unsafe {
-        // マウスの左クリック解放
-        let mut input = mem::zeroed::<INPUT>();
-        input.type_ = winapi::um::winuser::INPUT_MOUSE;
-        let mouse = input.u.mi_mut();
-        mouse.dwFlags = MOUSEEVENTF_LEFTUP;
-        // mouse.dx = x;
-        // mouse.dy = y;
-
-        winapi::um::winuser::SendInput(1, &mut input, mem::size_of::<INPUT>() as i32);
-    }
-}
-
-fn click_position(button_pos: &ButtonPosition) {
-    println!(
-        "click_position [{}] : x: {}, y: {}",
-        button_pos.name, button_pos.x_pos, button_pos.y_pos
-    );
-
-    click_pos_win32(button_pos.x_pos, button_pos.y_pos);
-}
-
-fn start_mv(screen: &ScreenInfo) {
-    // ランダム→MV再生→スタート→中央クリック を押す一連の動作
-    const HEIGHT: f32 = 10.0;
-    const WIDTH: f32 = 20.0;
-
-    println!(
-        "screen.width: {}, screen.height: {}",
-        screen.width, screen.height
-    );
-
-    let y_pos_val = ((screen.height as f32) * (9.1 / HEIGHT)) as i32;
-
-    let random_button = ButtonPosition {
-        name: String::from("ランダム"),
-        x_pos: ((screen.width as f32) * (6.0 / WIDTH)) as i32,
-        y_pos: y_pos_val,
-    };
-
-    let mv_watch_button = ButtonPosition {
-        name: String::from("MV視聴"),
-        x_pos: ((screen.width as f32) * (15.0 / WIDTH)) as i32,
-        y_pos: y_pos_val,
-    };
-
-    let mv_start_button = ButtonPosition {
-        name: String::from("スタート"),
-        x_pos: ((screen.width as f32) * (18.0 / WIDTH)) as i32,
-        y_pos: y_pos_val,
-    };
-
-    // ランダムボタンをランダム回数押す
-    let random_count = rand::thread_rng().gen_range(1..11);
-    println!("Shuffling...");
-    for _ in 0..random_count {
-        click_position(&random_button);
-        thread::sleep(Duration::new(1, 0));
-    }
-    println!("{} time(s)!", random_count);
-
-    // 待機
-    thread::sleep(Duration::new(3, 0));
-
-    // スタートボタンを押す
-    click_position(&mv_watch_button);
-
-    // 待機
-    thread::sleep(Duration::new(2, 0));
-
-    // MV再生ボタンを押す
-    click_position(&mv_start_button);
-
-    // 待機
-    thread::sleep(Duration::new(1, 0));
 }
