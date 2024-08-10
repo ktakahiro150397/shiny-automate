@@ -14,7 +14,7 @@ fn main() {
 
     // 引数が2つない場合はエラーを表示
     if args.len() < 3 {
-        eprintln!("Usage: shiny_mas <width px> <height px> <scale> <index>");
+        eprintln!("Usage: shiny_mas <width px> <height px> <scale> <index> <COM Name>");
         return;
     }
     let raw_width_px: i32 = match args[1].parse() {
@@ -48,17 +48,17 @@ fn main() {
         }
     };
 
-    let com_index: i32 = match args[5].parse() {
+    let com_name: String = match args[5].parse() {
         Ok(n) => n,
         Err(_) => {
-            eprintln!("COM port index is not a number.");
-            0
+            eprintln!("COM port index is not a String.");
+            return;
         }
     };
 
     println!(
         "Width: {}, Height: {}, Scale: {}, Monitor Index: {} Com Port: {}",
-        raw_width_px, raw_height_px, scale, monitor_index, com_index
+        raw_width_px, raw_height_px, scale, monitor_index, &com_name
     );
 
     let resolution_width_px: i32 = ((raw_width_px as f32) / scale) as i32;
@@ -70,9 +70,17 @@ fn main() {
     );
     let screen_info = ScreenInfo::new(resolution_width_px, resolution_height_px);
 
-    let wait_duration = Duration::new(10, 0);
+    let wait_duration = Duration::new(1, 0);
 
-    // 待機
+    // シリアル通信の設定
+    // COMポートへ通信
+    println!("Send data to {}", &com_name);
+    let mut port = serialport::new(&com_name, 9600)
+        .open()
+        .expect("failed to create port");
+
+    // delay 5sec
+    thread::sleep(Duration::from_secs(5));
 
     loop {
         if is_playing(monitor_index, &screen_info) {
@@ -81,19 +89,12 @@ fn main() {
         } else {
             // 再生中でない場合、ランダム再生する
             println!("楽曲選択画面にいるため、Arduinoへ通知");
+            // データを送信
+            let data_to_send = b"1";
+            port.write_all(data_to_send)
+                .expect("Failed to write data to port");
+            println!("Data sent to port");
         }
-
-        // COMポートへ通信
-        println!("Send data to COM6");
-        let mut port = serialport::new("COM6", 9600)
-            .open()
-            .expect("failed to create port");
-
-        // データを送信
-        let data_to_send = b"1";
-        port.write_all(data_to_send)
-            .expect("Failed to write data to port");
-        println!("Data sent to port");
 
         thread::sleep(wait_duration);
     }
